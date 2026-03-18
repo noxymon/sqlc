@@ -29,7 +29,7 @@ func (v *sqlcFuncVisitor) Visit(node ast.Node) astutils.Visitor {
 	// Custom validation for sqlc.arg, sqlc.narg and sqlc.slice
 	// TODO: Replace this once type-checking is implemented
 	if fn.Schema == "sqlc" {
-		if !(fn.Name == "arg" || fn.Name == "narg" || fn.Name == "slice" || fn.Name == "embed") {
+		if !(fn.Name == "arg" || fn.Name == "narg" || fn.Name == "slice" || fn.Name == "embed" || fn.Name == "nullable" || fn.Name == "notnull") {
 			v.err = sqlerr.FunctionNotFound("sqlc." + fn.Name)
 			return nil
 		}
@@ -39,6 +39,10 @@ func (v *sqlcFuncVisitor) Visit(node ast.Node) astutils.Visitor {
 				Message:  fmt.Sprintf("expected 1 parameter to sqlc.%s; got %d", fn.Name, len(call.Args.Items)),
 				Location: call.Pos(),
 			}
+			return nil
+		}
+
+		if fn.Name == "nullable" || fn.Name == "notnull" {
 			return nil
 		}
 

@@ -14,7 +14,7 @@ type QueryCatalog struct {
 	embeds  rewrite.EmbedSet
 }
 
-func (comp *Compiler) buildQueryCatalog(c *catalog.Catalog, node ast.Node, embeds rewrite.EmbedSet) (*QueryCatalog, error) {
+func (comp *Compiler) buildQueryCatalog(c *catalog.Catalog, node ast.Node, embeds rewrite.EmbedSet, hints rewrite.HintSet) (*QueryCatalog, error) {
 	var with *ast.WithClause
 	switch n := node.(type) {
 	case *ast.DeleteStmt:
@@ -32,7 +32,7 @@ func (comp *Compiler) buildQueryCatalog(c *catalog.Catalog, node ast.Node, embed
 	if with != nil {
 		for _, item := range with.Ctes.Items {
 			if cte, ok := item.(*ast.CommonTableExpr); ok {
-				cols, err := comp.outputColumns(qc, cte.Ctequery)
+				cols, err := comp.outputColumns(qc, cte.Ctequery, hints)
 				if err != nil {
 					return nil, err
 				}

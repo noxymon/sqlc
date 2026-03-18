@@ -176,7 +176,34 @@ func (c *Compiler) _analyzeQuery(raw *ast.RawStmt, query string, failfast bool) 
 		sort.Slice(refs, func(i, j int) bool { return refs[i].ref.Number < refs[j].ref.Number })
 	}
 	raw, embeds := rewrite.Embeds(raw)
-	qc, err := c.buildQueryCatalog(c.catalog, raw.Stmt, embeds)
+	raw, hints := rewrite.Hints(raw)
+	for _, h := range hints {
+		prefix := "sqlc." + h.FuncName + "("
+		loc := h.Location - raw.StmtLocation
+		edits = append(edits, source.Edit{
+			Location: loc,
+			Old:      prefix,
+			New:      "",
+		})
+
+		depth := 1
+		for i := loc + len(prefix); i < len(query); i++ {
+			if query[i] == '(' {
+				depth++
+			} else if query[i] == ')' {
+				depth--
+				if depth == 0 {
+					edits = append(edits, source.Edit{
+						Location: i,
+						Old:      ")",
+						New:      "",
+					})
+					break
+				}
+			}
+		}
+	}
+	qc, err := c.buildQueryCatalog(c.catalog, raw.Stmt, embeds, hints)
 	if err := check(err); err != nil {
 		return nil, err
 	}
@@ -185,7 +212,7 @@ func (c *Compiler) _analyzeQuery(raw *ast.RawStmt, query string, failfast bool) 
 	if err := check(err); err != nil {
 		return nil, err
 	}
-	cols, err := c.outputColumns(qc, raw.Stmt)
+	cols, err := c.outputColumns(qc, raw.Stmt, hints)
 	if err := check(err); err != nil {
 		return nil, err
 	}

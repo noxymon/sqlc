@@ -79,7 +79,7 @@ func (c *Compiler) quote(x string) string {
 }
 
 func (c *Compiler) expandStmt(qc *QueryCatalog, raw *ast.RawStmt, node ast.Node) ([]source.Edit, error) {
-	tables, err := c.sourceTables(qc, node)
+	tables, err := c.sourceTables(qc, node, nil)
 	if err != nil {
 		return nil, err
 	}

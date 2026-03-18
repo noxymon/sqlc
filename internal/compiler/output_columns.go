@@ -8,16 +8,17 @@ import (
 	"github.com/sqlc-dev/sqlc/internal/sql/astutils"
 	"github.com/sqlc-dev/sqlc/internal/sql/catalog"
 	"github.com/sqlc-dev/sqlc/internal/sql/lang"
+	"github.com/sqlc-dev/sqlc/internal/sql/rewrite"
 	"github.com/sqlc-dev/sqlc/internal/sql/sqlerr"
 )
 
 // OutputColumns determines which columns a statement will output
 func (c *Compiler) OutputColumns(stmt ast.Node) ([]*catalog.Column, error) {
-	qc, err := c.buildQueryCatalog(c.catalog, stmt, nil)
+	qc, err := c.buildQueryCatalog(c.catalog, stmt, nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	cols, err := c.outputColumns(qc, stmt)
+	cols, err := c.outputColumns(qc, stmt, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -51,8 +52,8 @@ func hasStarRef(cf *ast.ColumnRef) bool {
 //
 // Return an error if column references are ambiguous
 // Return an error if column references don't exist
-func (c *Compiler) outputColumns(qc *QueryCatalog, node ast.Node) ([]*Column, error) {
-	tables, err := c.sourceTables(qc, node)
+func (c *Compiler) outputColumns(qc *QueryCatalog, node ast.Node, hints rewrite.HintSet) ([]*Column, error) {
+	tables, err := c.sourceTables(qc, node, hints)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +113,7 @@ func (c *Compiler) outputColumns(qc *QueryCatalog, node ast.Node) ([]*Column, er
 		// For UNION queries, targets is empty and we need to look for the
 		// columns in Largs.
 		if isUnion {
-			return c.outputColumns(qc, n.Larg)
+			return c.outputColumns(qc, n.Larg, hints)
 		}
 	case *ast.UpdateStmt:
 		targets = n.ReturningList
@@ -125,6 +126,7 @@ func (c *Compiler) outputColumns(qc *QueryCatalog, node ast.Node) ([]*Column, er
 		if !ok {
 			continue
 		}
+		start := len(cols)
 		switch n := res.Val.(type) {
 
 		case *ast.A_Const:
@@ -333,7 +335,7 @@ func (c *Compiler) outputColumns(qc *QueryCatalog, node ast.Node) ([]*Column, er
 			case ast.EXISTS_SUBLINK:
 				cols = append(cols, &Column{Name: name, DataType: "bool", NotNull: true})
 			case ast.EXPR_SUBLINK:
-				subcols, err := c.outputColumns(qc, n.Subselect)
+				subcols, err := c.outputColumns(qc, n.Subselect, hints)
 				if err != nil {
 					return nil, err
 				}
@@ -369,7 +371,7 @@ func (c *Compiler) outputColumns(qc *QueryCatalog, node ast.Node) ([]*Column, er
 			cols = append(cols, col)
 
 		case *ast.SelectStmt:
-			subcols, err := c.outputColumns(qc, n)
+			subcols, err := c.outputColumns(qc, n, hints)
 			if err != nil {
 				return nil, err
 			}
@@ -386,6 +388,12 @@ func (c *Compiler) outputColumns(qc *QueryCatalog, node ast.Node) ([]*Column, er
 			}
 			cols = append(cols, &Column{Name: name, DataType: "any", NotNull: false})
 
+		}
+
+		if hint, ok := hints.ForNode(res.Val); ok {
+			for i := start; i < len(cols); i++ {
+				cols[i].NotNull = hint.NotNull
+			}
 		}
 	}
 
@@ -478,7 +486,7 @@ func (r *tableVisitor) Visit(n ast.Node) astutils.Visitor {
 // Return an error if column references don't exist
 // Return an error if a table is referenced twice
 // Return an error if an unknown column is referenced
-func (c *Compiler) sourceTables(qc *QueryCatalog, node ast.Node) ([]*Table, error) {
+func (c *Compiler) sourceTables(qc *QueryCatalog, node ast.Node, hints rewrite.HintSet) ([]*Table, error) {
 	list := &ast.List{}
 	switch n := node.(type) {
 	case *ast.DeleteStmt:
@@ -599,7 +607,7 @@ func (c *Compiler) sourceTables(qc *QueryCatalog, node ast.Node) ([]*Table, erro
 			tables = append(tables, table)
 
 		case *ast.RangeSubselect:
-			cols, err := c.outputColumns(qc, n.Subquery)
+			cols, err := c.outputColumns(qc, n.Subquery, hints)
 			if err != nil {
 				return nil, err
 			}

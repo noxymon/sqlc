@@ -17,6 +17,7 @@ type Field struct {
 	Tags    map[string]string
 	Comment string
 	Column  *plugin.Column
+	IsEnum  bool
 	// EmbedFields contains the embedded fields that require scanning.
 	EmbedFields []Field
 }

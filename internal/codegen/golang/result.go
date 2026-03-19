@@ -393,6 +393,7 @@ func columnsToStruct(req *plugin.GenerateRequest, options *opts.Options, name st
 			DBName: colName,
 			Tags:   tags,
 			Column: c.Column,
+			IsEnum: isEnum(req, c.Column),
 		}
 		if c.embed == nil {
 			f.Type = goType(req, options, c.Column)

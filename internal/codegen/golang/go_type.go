@@ -69,6 +69,18 @@ func goType(req *plugin.GenerateRequest, options *opts.Options, col *plugin.Colu
 	return typ
 }
 
+func isEnum(req *plugin.GenerateRequest, col *plugin.Column) bool {
+	columnType := sdk.DataType(col.Type)
+	for _, schema := range req.Catalog.Schemas {
+		for _, enum := range schema.Enums {
+			if enum.Name == columnType {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func goInnerType(req *plugin.GenerateRequest, options *opts.Options, col *plugin.Column) string {
 	// package overrides have a higher precedence
 	for _, override := range options.Overrides {

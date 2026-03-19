@@ -59,61 +59,37 @@ func validateQueryName(name string) error {
 }
 
 func ParseQueryNameAndType(t string, commentStyle CommentSyntax) (string, string, error) {
-	for _, line := range strings.Split(t, "\n") {
-		var prefix string
-		if strings.HasPrefix(line, "--") {
-			if !commentStyle.Dash {
-				continue
-			}
-			prefix = "--"
-		}
-		if strings.HasPrefix(line, "/*") {
-			if !commentStyle.SlashStar {
-				continue
-			}
-			prefix = "/*"
-		}
-		if strings.HasPrefix(line, "#") {
-			if !commentStyle.Hash {
-				continue
-			}
-			prefix = "#"
-		}
-		if prefix == "" {
-			continue
-		}
-		rest := line[len(prefix):]
-		if !strings.HasPrefix(strings.TrimSpace(rest), "name") {
-			continue
-		}
-		if !strings.Contains(rest, ":") {
-			continue
-		}
-		if !strings.HasPrefix(rest, " name: ") {
-			return "", "", fmt.Errorf("invalid metadata: %s", line)
-		}
+	cleaned, err := source.CleanedComments(t, source.CommentSyntax(commentStyle))
+	if err != nil {
+		return "", "", err
+	}
 
-		part := strings.Split(strings.TrimSpace(line), " ")
-		if prefix == "/*" {
-			part = part[:len(part)-1] // removes the trailing "*/" element
+	for _, c := range cleaned {
+		for _, line := range strings.Split(c, "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "name:") {
+				continue
+			}
+
+			part := strings.Fields(line)
+			if len(part) == 2 {
+				return "", "", fmt.Errorf("missing query type [':one', ':many', ':exec', ':execrows', ':execlastid', ':execresult', ':copyfrom', 'batchexec', 'batchmany', 'batchone']: %s", line)
+			}
+			if len(part) != 3 {
+				return "", "", fmt.Errorf("invalid query comment: %s", line)
+			}
+			queryName := part[1]
+			queryType := part[2]
+			switch queryType {
+			case CmdOne, CmdMany, CmdExec, CmdExecResult, CmdExecRows, CmdExecLastId, CmdCopyFrom, CmdBatchExec, CmdBatchMany, CmdBatchOne:
+			default:
+				return "", "", fmt.Errorf("invalid query type: %s", queryType)
+			}
+			if err := validateQueryName(queryName); err != nil {
+				return "", "", err
+			}
+			return queryName, queryType, nil
 		}
-		if len(part) == 3 {
-			return "", "", fmt.Errorf("missing query type [':one', ':many', ':exec', ':execrows', ':execlastid', ':execresult', ':copyfrom', 'batchexec', 'batchmany', 'batchone']: %s", line)
-		}
-		if len(part) != 4 {
-			return "", "", fmt.Errorf("invalid query comment: %s", line)
-		}
-		queryName := part[2]
-		queryType := strings.TrimSpace(part[3])
-		switch queryType {
-		case CmdOne, CmdMany, CmdExec, CmdExecResult, CmdExecRows, CmdExecLastId, CmdCopyFrom, CmdBatchExec, CmdBatchMany, CmdBatchOne:
-		default:
-			return "", "", fmt.Errorf("invalid query type: %s", queryType)
-		}
-		if err := validateQueryName(queryName); err != nil {
-			return "", "", err
-		}
-		return queryName, queryType, nil
 	}
 	return "", "", nil
 }
@@ -125,46 +101,61 @@ func ParseCommentFlags(comments []string) (map[string]string, map[string]bool, m
 	flags := make(map[string]bool)
 	ruleSkiplist := make(map[string]struct{})
 
-	for _, line := range comments {
-		s := bufio.NewScanner(strings.NewReader(line))
-		s.Split(bufio.ScanWords)
+	for _, c := range comments {
+		for _, line := range strings.Split(c, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
 
-		s.Scan()
-		token := s.Text()
+			if strings.Contains(line, ":") && !strings.HasPrefix(line, "@") {
+				parts := strings.SplitN(line, ":", 2)
+				key := strings.TrimSpace(parts[0])
+				val := strings.TrimSpace(parts[1])
+				switch key {
+				case "name":
+					// already handled
+				case "slice", "arg", "narg", "embed":
+					params[val] = "sqlc." + key
+				}
+				continue
+			}
 
-		if !strings.HasPrefix(token, "@") {
-			continue
-		}
+			s := bufio.NewScanner(strings.NewReader(line))
+			s.Split(bufio.ScanWords)
 
-		switch token {
-		case constants.QueryFlagParam:
 			s.Scan()
-			name := s.Text()
-			var rest []string
-			for s.Scan() {
-				paramToken := s.Text()
-				rest = append(rest, paramToken)
-			}
-			params[name] = strings.Join(rest, " ")
+			token := s.Text()
 
-		case constants.QueryFlagSqlcVetDisable:
-			flags[token] = true
-
-			// Vet rules can all be disabled in the same line or split across lines .i.e.
-			// /* @sqlc-vet-disable sqlc/db-prepare delete-without-where */
-			// is equivalent to:
-			// /* @sqlc-vet-disable sqlc/db-prepare */
-			// /* @sqlc-vet-disable delete-without-where */
-			for s.Scan() {
-				ruleSkiplist[s.Text()] = struct{}{}
+			if !strings.HasPrefix(token, "@") {
+				continue
 			}
 
-		default:
-			flags[token] = true
-		}
+			switch token {
+			case constants.QueryFlagParam:
+				s.Scan()
+				name := s.Text()
+				var rest []string
+				for s.Scan() {
+					paramToken := s.Text()
+					rest = append(rest, paramToken)
+				}
+				params[name] = strings.Join(rest, " ")
 
-		if s.Err() != nil {
-			return params, flags, ruleSkiplist, s.Err()
+			case constants.QueryFlagSqlcVetDisable:
+				flags[token] = true
+
+				for s.Scan() {
+					ruleSkiplist[s.Text()] = struct{}{}
+				}
+
+			default:
+				flags[token] = true
+			}
+
+			if s.Err() != nil {
+				return params, flags, ruleSkiplist, s.Err()
+			}
 		}
 	}
 

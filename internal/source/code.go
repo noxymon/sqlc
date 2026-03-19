@@ -99,29 +99,54 @@ func Mutate(raw string, a []Edit) (string, error) {
 func StripComments(sql string) (string, []string, error) {
 	s := bufio.NewScanner(strings.NewReader(strings.TrimSpace(sql)))
 	var lines, comments []string
+	var inBlock bool
 	for s.Scan() {
 		t := s.Text()
-		if strings.HasPrefix(t, "-- name:") {
+		trimmed := strings.TrimSpace(t)
+
+		if inBlock {
+			if i := strings.Index(t, "*/"); i != -1 {
+				comments = append(comments, t[:i])
+				inBlock = false
+			} else {
+				comments = append(comments, t)
+			}
 			continue
 		}
-		if strings.HasPrefix(t, "/* name:") && strings.HasSuffix(t, "*/") {
+
+		if strings.HasPrefix(trimmed, "-- name:") {
 			continue
 		}
-		if strings.HasPrefix(t, "# name:") {
+		if strings.HasPrefix(trimmed, "/* name:") && strings.HasSuffix(trimmed, "*/") {
 			continue
 		}
-		if strings.HasPrefix(t, "--") {
-			comments = append(comments, strings.TrimPrefix(t, "--"))
+		if strings.HasPrefix(trimmed, "# name:") {
 			continue
 		}
-		if strings.HasPrefix(t, "/*") && strings.HasSuffix(t, "*/") {
-			t = strings.TrimPrefix(t, "/*")
-			t = strings.TrimSuffix(t, "*/")
-			comments = append(comments, t)
+
+		if strings.HasPrefix(trimmed, "--") {
+			comments = append(comments, strings.TrimPrefix(trimmed, "--"))
 			continue
 		}
-		if strings.HasPrefix(t, "#") {
-			comments = append(comments, strings.TrimPrefix(t, "#"))
+		if strings.HasPrefix(trimmed, "#") {
+			comments = append(comments, strings.TrimPrefix(trimmed, "#"))
+			continue
+		}
+		if strings.HasPrefix(trimmed, "/*") {
+			if i := strings.Index(t, "*/"); i != -1 {
+				// Single line block
+				content := t[strings.Index(t, "/*")+2 : i]
+				// Check if it's a name annotation (even if not at start of line)
+				if !strings.HasPrefix(strings.TrimSpace(content), "name:") {
+					comments = append(comments, content)
+				}
+			} else {
+				inBlock = true
+				content := t[strings.Index(t, "/*")+2:]
+				if !strings.HasPrefix(strings.TrimSpace(content), "name:") {
+					comments = append(comments, content)
+				}
+			}
 			continue
 		}
 		lines = append(lines, t)
@@ -132,34 +157,40 @@ func StripComments(sql string) (string, []string, error) {
 func CleanedComments(rawSQL string, cs CommentSyntax) ([]string, error) {
 	s := bufio.NewScanner(strings.NewReader(strings.TrimSpace(rawSQL)))
 	var comments []string
+	var inBlock bool
 	for s.Scan() {
 		line := s.Text()
-		var prefix string
-		if strings.HasPrefix(line, "--") {
-			if !cs.Dash {
-				continue
+		trimmed := strings.TrimSpace(line)
+
+		if inBlock {
+			if i := strings.Index(line, "*/"); i != -1 {
+				comments = append(comments, line[:i])
+				inBlock = false
+			} else {
+				comments = append(comments, line)
 			}
-			prefix = "--"
-		}
-		if strings.HasPrefix(line, "/*") {
-			if !cs.SlashStar {
-				continue
-			}
-			prefix = "/*"
-		}
-		if strings.HasPrefix(line, "#") {
-			if !cs.Hash {
-				continue
-			}
-			prefix = "#"
-		}
-		if prefix == "" {
 			continue
 		}
 
-		rest := line[len(prefix):]
-		rest = strings.TrimSuffix(rest, "*/")
-		comments = append(comments, rest)
+		if cs.Dash && strings.HasPrefix(trimmed, "--") {
+			comments = append(comments, strings.TrimPrefix(trimmed, "--"))
+			continue
+		}
+		if cs.Hash && strings.HasPrefix(trimmed, "#") {
+			comments = append(comments, strings.TrimPrefix(trimmed, "#"))
+			continue
+		}
+		if cs.SlashStar && strings.HasPrefix(trimmed, "/*") {
+			if i := strings.Index(line, "*/"); i != -1 {
+				// Single line block
+				content := line[strings.Index(line, "/*")+2 : i]
+				comments = append(comments, content)
+			} else {
+				inBlock = true
+				comments = append(comments, line[strings.Index(line, "/*")+2:])
+			}
+			continue
+		}
 	}
 	return comments, s.Err()
 }

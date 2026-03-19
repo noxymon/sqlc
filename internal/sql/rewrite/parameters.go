@@ -78,11 +78,22 @@ func paramFromFuncCall(call *ast.FuncCall) (named.Param, string) {
 	return param, origText
 }
 
-func NamedParameters(engine config.Engine, raw *ast.RawStmt, numbs map[int]bool, dollar bool) (*ast.RawStmt, *named.ParamSet, []source.Edit) {
+func NamedParameters(engine config.Engine, raw *ast.RawStmt, numbs map[int]bool, dollar bool, overrides map[string]string) (*ast.RawStmt, *named.ParamSet, []source.Edit) {
 	foundFunc := astutils.Search(raw, named.IsParamFunc)
 	foundSign := astutils.Search(raw, named.IsParamSign)
 	hasNamedParameterSupport := engine != config.EngineMySQL
 	allParams := named.NewParamSet(numbs, hasNamedParameterSupport)
+
+	for name, val := range overrides {
+		switch val {
+		case "sqlc.slice":
+			allParams.Override(named.NewSqlcSlice(name))
+		case "sqlc.narg":
+			allParams.Override(named.NewUserNullableParam(name))
+		case "sqlc.arg":
+			allParams.Override(named.NewParam(name))
+		}
+	}
 
 	if len(foundFunc.Items)+len(foundSign.Items) == 0 {
 		return raw, allParams, nil
@@ -96,6 +107,7 @@ func NamedParameters(engine config.Engine, raw *ast.RawStmt, numbs map[int]bool,
 			fun := node.(*ast.FuncCall)
 			param, origText := paramFromFuncCall(fun)
 			argn := allParams.Add(param)
+			param = allParams.Get(param.Name()) // Fetch merged param
 			cr.Replace(&ast.ParamRef{
 				Number:   argn,
 				Location: fun.Location,
@@ -132,6 +144,7 @@ func NamedParameters(engine config.Engine, raw *ast.RawStmt, numbs map[int]bool,
 			param := named.NewParam(paramName)
 
 			argn := allParams.Add(param)
+			param = allParams.Get(param.Name()) // Fetch merged param
 			cast.Arg = &ast.ParamRef{
 				Number:   argn,
 				Location: expr.Location,
@@ -140,10 +153,16 @@ func NamedParameters(engine config.Engine, raw *ast.RawStmt, numbs map[int]bool,
 
 			// TODO: This code assumes that @foo::bool is on a single line
 			var replace string
-			if engine == config.EngineMySQL || !dollar {
-				replace = "?"
-			} else if engine == config.EngineSQLite {
-				replace = fmt.Sprintf("?%d", argn)
+			if engine == config.EngineMySQL || engine == config.EngineSQLite || !dollar {
+				if param.IsSqlcSlice() {
+					replace = fmt.Sprintf(`/*SLICE:%s*/?`, param.Name())
+				} else {
+					if engine == config.EngineSQLite {
+						replace = fmt.Sprintf("?%d", argn)
+					} else {
+						replace = "?"
+					}
+				}
 			} else {
 				replace = fmt.Sprintf("$%d", argn)
 			}
@@ -161,6 +180,7 @@ func NamedParameters(engine config.Engine, raw *ast.RawStmt, numbs map[int]bool,
 			param := named.NewParam(paramName)
 
 			argn := allParams.Add(param)
+			param = allParams.Get(param.Name()) // Fetch merged param
 			cr.Replace(&ast.ParamRef{
 				Number:   argn,
 				Location: expr.Location,
@@ -168,10 +188,16 @@ func NamedParameters(engine config.Engine, raw *ast.RawStmt, numbs map[int]bool,
 
 			// TODO: This code assumes that @foo is on a single line
 			var replace string
-			if engine == config.EngineMySQL || !dollar {
-				replace = "?"
-			} else if engine == config.EngineSQLite {
-				replace = fmt.Sprintf("?%d", argn)
+			if engine == config.EngineMySQL || engine == config.EngineSQLite || !dollar {
+				if param.IsSqlcSlice() {
+					replace = fmt.Sprintf(`/*SLICE:%s*/?`, param.Name())
+				} else {
+					if engine == config.EngineSQLite {
+						replace = fmt.Sprintf("?%d", argn)
+					} else {
+						replace = "?"
+					}
+				}
 			} else {
 				replace = fmt.Sprintf("$%d", argn)
 			}

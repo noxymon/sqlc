@@ -37,7 +37,7 @@ func (p *ParamSet) Add(param Param) int {
 	existing, ok := p.namedParams[name]
 
 	p.namedParams[name] = mergeParam(existing, param)
-	if ok && p.hasNamedSupport {
+	if ok && p.hasNamedSupport && len(p.namedLocs[name]) > 0 {
 		return p.namedLocs[name][0]
 	}
 
@@ -82,4 +82,17 @@ func NewParamSet(positionsUsed map[int]bool, hasNamedSupport bool) *ParamSet {
 		hasNamedSupport: hasNamedSupport,
 		positionToName:  positionToName,
 	}
+}
+
+// Override merges the given param into an existing named parameter in the set.
+// If the parameter does not exist, it is created.
+func (p *ParamSet) Override(param Param) {
+	name := param.name
+	existing := p.namedParams[name]
+	p.namedParams[name] = mergeParam(existing, param)
+}
+
+// Get returns the parameter with the given name.
+func (p *ParamSet) Get(name string) Param {
+	return p.namedParams[name]
 }

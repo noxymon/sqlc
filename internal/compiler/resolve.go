@@ -315,6 +315,18 @@ func (comp *Compiler) resolveCatalogRefs(qc *QueryCatalog, rvs []*ast.RangeVar, 
 				}
 			}
 
+		case *ast.BoolExpr:
+			p, isNamed := params.FetchMerge(ref.ref.Number, named.NewInferredParam(ref.name, true))
+			a = append(a, Parameter{
+				Number: ref.ref.Number,
+				Column: &Column{
+					Name:         p.Name(),
+					DataType:     "bool",
+					IsNamedParam: isNamed,
+					NotNull:      true,
+				},
+			})
+
 		case *ast.FuncCall:
 			fun, err := c.ResolveFuncCall(n)
 			if err != nil {

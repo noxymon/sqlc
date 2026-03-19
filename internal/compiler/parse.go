@@ -194,14 +194,13 @@ func rangeVars(root ast.Node) []*ast.RangeVar {
 }
 
 func uniqueParamRefs(in []paramRef, dollar bool) []paramRef {
+	// fmt.Printf("uniqueParamRefs in: %d, dollar: %v\n", len(in), dollar)
 	m := make(map[int]bool, len(in))
 	o := make([]paramRef, 0, len(in))
 	for _, v := range in {
-		if !m[v.ref.Number] {
+		if v.ref.Number != 0 && !m[v.ref.Number] {
 			m[v.ref.Number] = true
-			if v.ref.Number != 0 {
-				o = append(o, v)
-			}
+			o = append(o, v)
 		}
 	}
 	if !dollar {
@@ -212,7 +211,9 @@ func uniqueParamRefs(in []paramRef, dollar bool) []paramRef {
 					start++
 				}
 				v.ref.Number = start
+				m[start] = true
 				o = append(o, v)
+				// fmt.Printf("  Assigned positional number %d at %d\n", v.ref.Number, v.ref.Location)
 			}
 		}
 	}

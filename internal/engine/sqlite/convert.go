@@ -368,8 +368,9 @@ func (c *cc) convertComparison(n *parser.Expr_comparisonContext) ast.Node {
 				&ast.String{Str: "="}, // TODO: add actual comparison
 			},
 		},
-		Lexpr: lexpr,
-		Rexpr: c.convert(n.Expr(1)),
+		Lexpr:    lexpr,
+		Rexpr:    c.convert(n.Expr(1)),
+		Location: n.GetStart().GetStart(),
 	}
 }
 
@@ -483,6 +484,7 @@ func (c *cc) convertMultiSelect_stmtContext(n *parser.Select_stmtContext) ast.No
 			GroupClause:  &groups,
 			HavingClause: having,
 			WindowClause: &window,
+			SortClause:   c.convertOrderby_stmtContext(n.Order_by_stmt()).(*ast.List),
 			ValuesLists:  &ast.List{},
 		}
 		if selectStmt == nil {
@@ -629,9 +631,28 @@ func (c *cc) convertOrderby_stmtContext(n parser.IOrder_by_stmtContext) ast.Node
 			if !ok {
 				continue
 			}
-			list.Items = append(list.Items, &ast.CaseExpr{
-				Xpr:      c.convert(term.Expr()),
-				Location: term.Expr().GetStart().GetStart(),
+			sortByDir := ast.SortByDirDefault
+			if ad := term.Asc_desc(); ad != nil {
+				if ad.ASC_() != nil {
+					sortByDir = ast.SortByDirAsc
+				} else {
+					sortByDir = ast.SortByDirDesc
+				}
+			}
+			sortByNulls := ast.SortByNullsDefault
+			if term.NULLS_() != nil {
+				if term.FIRST_() != nil {
+					sortByNulls = ast.SortByNullsFirst
+				} else {
+					sortByNulls = ast.SortByNullsLast
+				}
+			}
+			list.Items = append(list.Items, &ast.SortBy{
+				Node:        c.convert(term.Expr()),
+				SortbyDir:   sortByDir,
+				SortbyNulls: sortByNulls,
+				UseOp:       &ast.List{},
+				Location:    term.Expr().GetStart().GetStart(),
 			})
 		}
 		return list

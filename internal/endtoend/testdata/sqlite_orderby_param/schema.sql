@@ -1,0 +1,6 @@
+CREATE TABLE Sequence
+(
+	ID       TEXT PRIMARY KEY,
+	Name     TEXT NOT NULL,
+	SeriesID TEXT NOT NULL
+);

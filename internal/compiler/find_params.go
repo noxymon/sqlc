@@ -10,7 +10,12 @@ import (
 func findParameters(root ast.Node) ([]paramRef, []error) {
 	refs := make([]paramRef, 0)
 	errors := make([]error, 0)
-	v := paramSearch{seen: make(map[int]struct{}), refs: &refs, errs: &errors}
+	rvs := rangeVars(root)
+	var rv *ast.RangeVar
+	if len(rvs) == 1 {
+		rv = rvs[0]
+	}
+	v := paramSearch{seen: make(map[int]struct{}), refs: &refs, errs: &errors, rangeVar: rv}
 	astutils.Walk(v, root)
 	if len(*v.errs) > 0 {
 		return refs, *v.errs
@@ -53,6 +58,9 @@ func (l *limitOffset) Pos() int {
 }
 
 func (p paramSearch) Visit(node ast.Node) astutils.Visitor {
+	if node != nil {
+		// fmt.Printf("Visiting %T at %d\n", node, node.Pos())
+	}
 	switch n := node.(type) {
 
 	case *ast.A_Expr:
@@ -146,6 +154,9 @@ func (p paramSearch) Visit(node ast.Node) astutils.Visitor {
 		if n.LimitOffset != nil {
 			p.limitOffset = n.LimitOffset
 		}
+
+	case *ast.SortBy:
+		p.parent = node
 
 	case *ast.TypeCast:
 		p.parent = node

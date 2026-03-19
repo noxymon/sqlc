@@ -12,6 +12,7 @@ type ColumnDef struct {
 	Vals       *List
 	Length     *int
 	PrimaryKey bool
+	IsGenerated bool
 
 	// From pg.ColumnDef
 	Inhcount      int

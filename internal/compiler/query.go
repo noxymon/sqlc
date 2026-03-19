@@ -39,6 +39,8 @@ type Column struct {
 
 	IsSqlcSlice bool // is this sqlc.slice()
 
+	IsGenerated bool
+
 	skipTableRequiredCheck bool
 }
 

@@ -151,7 +151,13 @@ func (p *Parser) Parse(r io.Reader) ([]ast.Statement, error) {
 	if err != nil {
 		return nil, err
 	}
-	tree, err := Parse(string(contents))
+	// Pre-process to support newer generated column syntax (VIRTUAL and implicit STORED)
+	// which may not be supported by the current pg_query_go version.
+	// We normalize these to STORED so the parser is happy.
+	sql := string(contents)
+	sql = preProcessGenerated(sql)
+
+	tree, err := Parse(sql)
 	if err != nil {
 		pErr := normalizeErr(err)
 		return nil, pErr
@@ -444,12 +450,13 @@ func translate(node *nodes.Node) (ast.Node, error) {
 				}
 
 				create.Cols = append(create.Cols, &ast.ColumnDef{
-					Colname:    item.ColumnDef.Colname,
-					TypeName:   rel.TypeName(),
-					IsNotNull:  isNotNull(item.ColumnDef) || primaryKey[item.ColumnDef.Colname],
-					IsArray:    isArray(item.ColumnDef.TypeName),
-					ArrayDims:  len(item.ColumnDef.TypeName.ArrayBounds),
-					PrimaryKey: primary,
+					Colname:     item.ColumnDef.Colname,
+					TypeName:    rel.TypeName(),
+					IsNotNull:   isNotNull(item.ColumnDef) || primaryKey[item.ColumnDef.Colname],
+					IsArray:     isArray(item.ColumnDef.TypeName),
+					ArrayDims:   len(item.ColumnDef.TypeName.ArrayBounds),
+					PrimaryKey:  primary,
+					IsGenerated: isGenerated(item.ColumnDef),
 				})
 			}
 		}
